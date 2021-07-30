@@ -64,6 +64,25 @@ func (s *Store) Incr(bucket, key []byte) (n uint64, err error) {
 	return
 }
 
+// Decr decrease a number
+func (s *Store) Decr(bucket, key []byte) (n uint64, err error) {
+	err = s.db.Update(func(tx *bolt.Tx) error {
+		data := make([]byte, 8)
+		b := tx.Bucket(bucket)
+		if old := b.Get(key); old != nil {
+			n = binary.BigEndian.Uint64(old)
+		}
+		// if n is min, keep it
+		if n == 0 {
+			return nil
+		}
+		n -= 1
+		binary.BigEndian.PutUint64(data, n)
+		return b.Put(key, data)
+	})
+	return
+}
+
 // Save key and val to bucket
 func (s *Store) Save(bucket, key, val []byte) (err error) {
 	return s.db.Update(func(tx *bolt.Tx) error {
