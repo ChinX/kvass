@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"math"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -13,16 +14,6 @@ import (
 var (
 	ErrNotfound = errors.New("key not found in store")
 )
-
-var db *Store
-
-func init() {
-	db = NewStore("my.db")
-}
-
-func GetDB() *Store {
-	return db
-}
 
 // Store wrap for bbolt
 type Store struct {
@@ -38,10 +29,12 @@ func NewStore(dbName string) *Store {
 	return &Store{db: db}
 }
 
+// Close store
 func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// CreateBucketIfNotExist create bucket if not exist
 func (s *Store) CreateBucketIfNotExist(bucket []byte) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists(bucket)
@@ -52,13 +45,17 @@ func (s *Store) CreateBucketIfNotExist(bucket []byte) error {
 	})
 }
 
+// Incr increase a number
 func (s *Store) Incr(bucket, key []byte) (n uint64, err error) {
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		data := make([]byte, 8)
 		b := tx.Bucket(bucket)
-		old := b.Get(key)
-		if old != nil {
+		if old := b.Get(key); old != nil {
 			n = binary.BigEndian.Uint64(old)
+		}
+		// if n is max, keep it
+		if n == math.MaxUint64 {
+			return nil
 		}
 		n += 1
 		binary.BigEndian.PutUint64(data, n)
@@ -67,16 +64,15 @@ func (s *Store) Incr(bucket, key []byte) (n uint64, err error) {
 	return
 }
 
-// Save save key and val to bucket
+// Save key and val to bucket
 func (s *Store) Save(bucket, key, val []byte) (err error) {
-	err = s.db.Update(func(tx *bolt.Tx) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		return b.Put(key, val)
 	})
-	return
 }
 
-// Get get val by key from bucket
+// Get val by key from bucket
 func (s *Store) Get(bucket, key []byte) (val []byte, err error) {
 	err = s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
@@ -87,6 +83,13 @@ func (s *Store) Get(bucket, key []byte) (val []byte, err error) {
 		return nil
 	})
 	return
+}
+
+func (s *Store) Delete(bucket, key []byte) (err error) {
+	return s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucket)
+		return b.Delete(key)
+	})
 }
 
 // Scan for bucket
